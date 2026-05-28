@@ -48,7 +48,7 @@ def handle_packet(pkt):
         record = [time, src, sport, dst, dport, proto, direction, size]
         buffer.append(record)
 
-        if len(buffer) > = MAX_SIZE:
+        if len(buffer) >= MAX_SIZE:
             flush_buffer()
 
 def table_init():
