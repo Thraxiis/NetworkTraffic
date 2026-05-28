@@ -56,7 +56,7 @@ def handle_packet(pkt):
         else:
             direction = "unknown"
         
-        print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | proto={proto} | {direction} | {size} bytes") # debug print
+        # print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | proto={proto} | {direction} | {size} bytes") # debug print
 
         record = [time, src, sport, dst, dport, proto, direction, size]
         buffer.append(record)
@@ -110,7 +110,7 @@ def main():
     signal.signal(signal.SIGALRM, alarm_handler)
     signal.alarm(30)
 
-    sniff(prn=handle_packet)
+    sniff(prn=handle_packet, filter="not (udp port 5353)")
 
 
 
