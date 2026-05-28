@@ -2,6 +2,16 @@ from scapy.all import sniff
 from datetime import datetime
 import socket
 import sqlite3
+from pathlib import Path
+import signal
+
+def alarm_handler(signum, frame):
+    flush_buffer()
+    signal.alarm(30) # Reset alarm
+
+def shutdown_handler(signum, frame):
+    flush_buffer()
+    exit(0)
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -76,11 +86,11 @@ def table_init():
 
 
 def flush_buffer():
-    #connect to DB
-    #write buffer contents to db
-    #mpty buffer
     if not buffer: # Guard against signal alarm fire on empty buffer
         return
+    
+    db = sqlite3.connect("traffic.db")
+    cursor = db.cursor()
 
     cursor.executemany('''INSERT INTO traffic(timestamp, source_ip, source_port, destination_ip, destination_port, prototype, direction, packet_size)
         VALUES(?,?,?,?,?,?,?,?)
@@ -92,7 +102,16 @@ def flush_buffer():
 
 
 def main():
-    sniff(prn=handle_packet, count=10)
+    file = Path("traffic.db")
+    if not file.exists():
+        table_init()
+    
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGALRM, alarm_handler)
+    signal.alarm(30)
+
+    sniff(prn=handle_packet)
+
 
 
 if __name__ == "__main__":
