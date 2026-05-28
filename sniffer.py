@@ -1,6 +1,10 @@
 from scapy.all import sniff
 from datetime import datetime
 import socket
+import sqlite3
+
+buffer = []
+MAX_SIZE = 1024
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -10,6 +14,7 @@ def get_local_ip():
     return ip
 
 def handle_packet(pkt):
+    global buffer
     piip = get_local_ip()
     # print(pkt.summary())
 
@@ -38,6 +43,50 @@ def handle_packet(pkt):
         else:
             direction = "unknown"
         
-        print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | proto={proto} | {direction} | {size} bytes")
+        print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | proto={proto} | {direction} | {size} bytes") # debug print
 
-sniff(prn=handle_packet, count=10)
+        record = [time, src, sport, dst, dport, proto, direction, size]
+        buffer.append(record)
+
+        if len(buffer) > = MAX_SIZE:
+            flush_buffer()
+
+def table_init():
+    db = sqlite3.connect("traffic.db")
+    cursor = db.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traffic(
+            id INTEGER PRIMARY KEY,
+            timestamp TEXT,
+            source_ip TEXT,
+            source_port INTEGER,
+            destination_ip TEXT,
+            destination_port INTEGER,
+            prototype TEXT,
+            direction TEXT,
+            packet_size INTEGER
+        )
+    ''')
+    db.commit()
+    db.close()
+
+
+def flush_buffer():
+    #connect to DB
+    #write buffer contents to db
+    #mpty buffer
+    if not buffer: # Guard against signal alarm fire on empty buffer
+        return
+
+    cursor.executemany('''INSERT INTO traffic(timestamp, source_ip, source_port, destination_ip, destination_port, prototype, direction, packet_size)
+        VALUES(?,?,?,?,?,?,?,?)
+        ''', buffer)
+    db.commit()
+
+    buffer[:] = []
+    db.close()
+
+
+def main():
+    sniff(prn=handle_packet, count=10)
