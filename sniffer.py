@@ -3,9 +3,6 @@ from datetime import datetime
 import socket
 import sqlite3
 
-buffer = []
-MAX_SIZE = 1024
-
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
@@ -13,9 +10,12 @@ def get_local_ip():
     s.close()
     return ip
 
+buffer = []
+piip = get_local_ip()
+MAX_SIZE = 100
+
 def handle_packet(pkt):
     global buffer
-    piip = get_local_ip()
     # print(pkt.summary())
 
     if pkt.haslayer("IP"):
@@ -28,6 +28,9 @@ def handle_packet(pkt):
         elif pkt.haslayer("UDP"):
             sport = pkt["UDP"].sport
             dport = pkt["UDP"].dport
+        else:
+            sport = None
+            dport = None
         
         proto = pkt["IP"].proto # 6 = TCP, 17 = UDP
         size = len(pkt)
@@ -90,3 +93,7 @@ def flush_buffer():
 
 def main():
     sniff(prn=handle_packet, count=10)
+
+
+if __name__ == "__main__":
+    main()
