@@ -4,6 +4,7 @@ import socket
 import sqlite3
 from pathlib import Path
 import signal
+import geoip2.database
 
 def alarm_handler(signum, frame):
     flush_buffer()
@@ -20,9 +21,11 @@ def get_local_ip():
     s.close()
     return ip
 
+MAX_SIZE = 100
 buffer = []
 piip = get_local_ip()
-MAX_SIZE = 100
+city_reader = geoip2.database.Reader("GeoLite2-City.mmdb")
+asn_reader = geoip2.database.Reader("GeoLite2-ASN.mmdb")
 
 def handle_packet(pkt):
     global buffer
@@ -56,9 +59,24 @@ def handle_packet(pkt):
         else:
             direction = "unknown"
         
-        # print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | proto={proto} | {direction} | {size} bytes") # debug print
+        # print(f"{time} | {chksum} | {src}:{sport} -> {dst}:{dport} | 
+        # proto={proto} | {direction} | {size} bytes") # debug print
 
-        record = [time, src, sport, dst, dport, proto, direction, size]
+        record = {
+            "timestamp": time,
+            "source_ip": src,
+            "source_port": sport,
+            "destination_ip": dst,
+            "destination_port": dport,
+            "destination_domain": None,
+            "country": None,
+            "city": None,
+            "organization": None,
+            "prototype": proto,
+            "direction": direction,
+            "packet_size": size
+        }
+        # [time, src, sport, dst, dport, proto, direction, size]
         buffer.append(record)
 
         if len(buffer) >= MAX_SIZE:
@@ -76,6 +94,10 @@ def table_init():
             source_port INTEGER,
             destination_ip TEXT,
             destination_port INTEGER,
+            destination_domain TEXT,
+            country TEXT, 
+            city TEXT, 
+            organization TEXT,
             prototype TEXT,
             direction TEXT,
             packet_size INTEGER
@@ -92,8 +114,34 @@ def flush_buffer():
     db = sqlite3.connect("traffic.db")
     cursor = db.cursor()
 
-    cursor.executemany('''INSERT INTO traffic(timestamp, source_ip, source_port, destination_ip, destination_port, prototype, direction, packet_size)
-        VALUES(?,?,?,?,?,?,?,?)
+    for rec in buffer:
+        try:
+            rec["destination_domain"] = socket.gethostbyaddr(rec["destination_ip"])[0]
+        except:
+            rec["destination_domain"] = None
+
+        try:
+            city_response = city_reader.city(rec["destination_ip"])
+            rec["country"] = city_response.country.name
+            rec["city"] = city_response.city.name
+        except:
+            rec["country"] = None
+            rec["city"] = None
+
+        try:
+            rec["organization"] = asn_reader.asn(rec["destination_ip"]).autonomous_system_org
+        except:
+            rec["organization"] = None
+
+    cursor.executemany('''INSERT INTO traffic(
+            timestamp, source_ip, source_port, 
+            destination_ip, destination_port, destination_domain, country,
+            city, organization, prototype, direction, packet_size
+        )
+        VALUES(:timestamp, :source_ip, :source_port, :destination_ip, 
+                :destination_port, :destination_domain, :country,
+                :city, :organization, :prototype, :direction, :packet_size
+                )
         ''', buffer)
     db.commit()
 
