@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 import signal
 import geoip2.database
+import ipaddress
 
 def alarm_handler(signum, frame):
     flush_buffer()
@@ -26,6 +27,13 @@ buffer = []
 piip = get_local_ip()
 city_reader = geoip2.database.Reader("GeoLite2-City.mmdb")
 asn_reader = geoip2.database.Reader("GeoLite2-ASN.mmdb")
+socket.setdefaulttimeout(2)
+
+def is_private(ip):
+    try:
+        return ipaddress.ip_address(ip).is_private
+    except:
+        return True
 
 def handle_packet(pkt):
     global buffer
@@ -115,23 +123,29 @@ def flush_buffer():
     cursor = db.cursor()
 
     for rec in buffer:
-        try:
-            rec["destination_domain"] = socket.gethostbyaddr(rec["destination_ip"])[0]
-        except:
-            rec["destination_domain"] = None
+        if not is_private(rec["destination_ip"]):
+            try:
+                rec["destination_domain"] = socket.gethostbyaddr(rec["destination_ip"])[0]
+            except:
+                rec["destination_domain"] = None
 
-        try:
-            city_response = city_reader.city(rec["destination_ip"])
-            rec["country"] = city_response.country.name
-            rec["city"] = city_response.city.name
-        except:
-            rec["country"] = None
-            rec["city"] = None
-
-        try:
-            rec["organization"] = asn_reader.asn(rec["destination_ip"]).autonomous_system_org
-        except:
-            rec["organization"] = None
+            try:
+                city_response = city_reader.city(rec["destination_ip"])
+                rec["country"] = city_response.country.name
+                rec["city"] = city_response.city.name
+            except:
+                rec["country"] = None
+                rec["city"] = None
+            
+            try:
+                rec["organization"] = asn_reader.asn(rec["destination_ip"]).autonomous_system_organization
+            except:
+                rec["organization"] = None
+        else:
+            rec["destination_domain"] = "local"
+            rec["country"] = "local"
+            rec["city"] = "local"
+            rec["organization"] = "local"
 
     cursor.executemany('''INSERT INTO traffic(
             timestamp, source_ip, source_port, 
